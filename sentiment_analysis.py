@@ -1,119 +1,110 @@
 # Sentiment Analysis on Book Reviews
 # With Word Clouds, Prediction Logging, and Sentiment Pie Chart
 
-import string
+import csv
 import pandas as pd
 import matplotlib.pyplot as plt
 from wordcloud import WordCloud
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import accuracy_score
 
-# ----------------------------
-# Step 1: Read dataset from CSV
-# ----------------------------
+# -------------------------
+# STEP 1 — Read CSV & Clean
+# -------------------------
 reviews = []
 labels = []
 
-with open("book_reviews.csv", "r", encoding="utf-8") as f:
-    for line in f:
-        text, sentiment = line.strip().split(",")
-        reviews.append(text)
-        labels.append(sentiment)
+with open(r"C:\Users\sanja\OneDrive\Sentiment_Analysis(python+ML)\book_reviews.csv", "r", encoding="utf-8") as f:
+    reader = csv.reader(f)
+    next(reader)  # Skip header
+    for row in reader:
+        if len(row) >= 2:
+            text = row[0].strip()
+            sentiment = row[1].strip().lower()
+            labels.append(sentiment)
+            reviews.append(text)
 
-# ----------------------------
-# Step 2: Clean text data
-# ----------------------------
-cleaned_reviews = []
-for review in reviews:
-    review = review.lower()
-    review = review.translate(str.maketrans("", "", string.punctuation))
-    cleaned_reviews.append(review)
+# -------------------------
+# STEP 2 — Filter out 'neutral'
+# -------------------------
+filtered_reviews = []
+filtered_labels = []
 
-# ----------------------------
-# Step 3: Convert text to numbers
-# ----------------------------
+for review, sentiment in zip(reviews, labels):
+    if sentiment in ["positive", "negative"]:  # keep only 2 classes
+        filtered_reviews.append(review)
+        filtered_labels.append(sentiment)
+
+reviews = filtered_reviews
+labels = filtered_labels
+
+print("Unique sentiments:", set(labels))
+print("Number of positive reviews:", labels.count("positive"))
+print("Number of negative reviews:", labels.count("negative"))
+
+# -------------------------
+# STEP 3 — Train/Test Split
+# -------------------------
 vectorizer = CountVectorizer()
-X = vectorizer.fit_transform(cleaned_reviews)
+X = vectorizer.fit_transform(reviews)
+y = labels
 
-# ----------------------------
-# Step 4: Train-test split
-# ----------------------------
 X_train, X_test, y_train, y_test = train_test_split(
-    X, labels, test_size=0.2, random_state=42
+    X, y, test_size=0.2, random_state=42
 )
 
-# ----------------------------
-# Step 5: Train Naive Bayes model
-# ----------------------------
-model = MultinomialNB()
+# -------------------------
+# STEP 4 — Train Model
+# -------------------------
+model = LogisticRegression()
 model.fit(X_train, y_train)
 
-# ----------------------------
-# Step 6: Evaluate model
-# ----------------------------
+# -------------------------
+# STEP 5 — Evaluate
+# -------------------------
 y_pred = model.predict(X_test)
-accuracy = accuracy_score(y_test, y_pred) * 100
-print("Model Accuracy:", round(accuracy, 2), "%")
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Model Accuracy: {accuracy * 100:.1f} %")
 
-# ----------------------------
-# Step 7: Word Clouds
-# ----------------------------
-positive_text = " ".join(
-    [cleaned_reviews[i] for i in range(len(cleaned_reviews)) if labels[i] == "positive"]
-)
-negative_text = " ".join(
-    [cleaned_reviews[i] for i in range(len(cleaned_reviews)) if labels[i] == "negative"]
-)
+# -------------------------
+# STEP 6 — Visualizations
+# -------------------------
+df = pd.DataFrame({"review": reviews, "sentiment": labels})
 
-positive_wc = WordCloud(width=500, height=300, background_color="white").generate(positive_text)
-negative_wc = WordCloud(width=500, height=300, background_color="white").generate(negative_text)
-
-plt.figure(figsize=(10, 5))
-plt.subplot(1, 2, 1)
-plt.imshow(positive_wc, interpolation="bilinear")
-plt.axis("off")
-plt.title("Positive Reviews Word Cloud")
-
-plt.subplot(1, 2, 2)
-plt.imshow(negative_wc, interpolation="bilinear")
-plt.axis("off")
-plt.title("Negative Reviews Word Cloud")
-
+# Sentiment count plot
+df["sentiment"].value_counts().plot(kind="bar", color=["green", "red"])
+plt.title("Sentiment Distribution")
+plt.xlabel("Sentiment")
+plt.ylabel("Count")
 plt.show()
 
-# ----------------------------
-# Step 8: Interactive prediction + logging
-# ----------------------------
-log_data = []
+# Word Clouds
+positive_text = " ".join(df[df["sentiment"] == "positive"]["review"])
+negative_text = " ".join(df[df["sentiment"] == "negative"]["review"])
 
-print("\nType a book review to check sentiment (type 'quit' to exit):")
+if positive_text.strip():
+    WordCloud(width=500, height=300, background_color="white").generate(positive_text).to_file("positive_wc.png")
+    plt.imshow(WordCloud(width=500, height=300, background_color="white").generate(positive_text))
+    plt.axis("off")
+    plt.title("Positive Reviews Word Cloud")
+    plt.show()
+
+if negative_text.strip():
+    WordCloud(width=500, height=300, background_color="white").generate(negative_text).to_file("negative_wc.png")
+    plt.imshow(WordCloud(width=500, height=300, background_color="white").generate(negative_text))
+    plt.axis("off")
+    plt.title("Negative Reviews Word Cloud")
+    plt.show()
+
+# -------------------------
+# STEP 7 — User Input
+# -------------------------
 while True:
-    user_review = input("> ")
+    user_review = input("Type a book review to check sentiment (type 'quit' to exit): ")
     if user_review.lower() == "quit":
         break
-    cleaned = user_review.lower().translate(str.maketrans("", "", string.punctuation))
-    X_new = vectorizer.transform([cleaned])
-    prediction = model.predict(X_new)[0]
-    print("Predicted Sentiment:", prediction)
-
-    # Store in log
-    log_data.append({"review": user_review, "predicted_sentiment": prediction})
-
-# ----------------------------
-# Step 9: Save predictions to CSV
-# ----------------------------
-if log_data:
-    df = pd.DataFrame(log_data)
-    df.to_csv("predictions_log.csv", index=False)
-    print("\nPredictions saved to predictions_log.csv")
-
-    # ----------------------------
-    # Step 10: Pie chart of predictions
-    # ----------------------------
-    sentiment_counts = df["predicted_sentiment"].value_counts()
-    plt.figure(figsize=(5, 5))
-    plt.pie(sentiment_counts, labels=sentiment_counts.index, autopct="%1.1f%%", colors=["#66bb6a", "#ef5350", "#ffee58"])
-    plt.title("Sentiment Distribution from This Session")
-    plt.show()
+    user_vector = vectorizer.transform([user_review])
+    prediction = model.predict(user_vector)[0]
+    print(f"Predicted Sentiment: {prediction}")
